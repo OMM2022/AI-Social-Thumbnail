@@ -1,10 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import type { GenerationOptions } from '../types';
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable is not set");
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+if (!apiKey) {
+    throw new Error("VITE_GEMINI_API_KEY environment variable is not set");
 }
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey });
 
 const fileToGenerativePart = (base64: string, mimeType: string) => {
   return {
@@ -19,21 +20,25 @@ const getAnalysisPrompt = async (options: GenerationOptions): Promise<string> =>
     if (options.mode === 'url') {
         const prompt = `You are an expert YouTube thumbnail designer. A user wants to create a thumbnail for a video based on the content at this URL: ${options.url}. The video's title is "${options.title}". Your task is to act as a creative director and write a detailed visual prompt for an AI image generator. This prompt should describe a highly engaging, clickable YouTube thumbnail. Consider the subject, composition, style (photorealistic, dramatic), colors (high contrast, vibrant), and mood (excitement, curiosity). Based on your analysis of the URL's likely content, provide ONLY the descriptive prompt for the image generator.`;
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash-exp',
             contents: prompt,
         });
-        return response.text;
+        return response.text || '';
     } else if (options.mode === 'image' && options.referenceImage) {
         const imagePart = fileToGenerativePart(options.referenceImage, 'image/jpeg');
-        const promptParts = [
-            `You are an expert YouTube thumbnail designer. A user has provided this reference image and wants to use it to create a thumbnail for a video titled "${options.title}". Your task is to act as a creative director and write a detailed visual prompt for an AI image generator. This prompt should describe how to transform or incorporate the user's image into a new, highly engaging, clickable YouTube thumbnail. Describe enhancements like dramatic lighting, color grading, special effects, and how to best integrate the title text. Provide ONLY the descriptive prompt for the image generator based on the provided image.`,
-            imagePart
-        ];
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: promptParts },
+            model: 'gemini-2.0-flash-exp',
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: `You are an expert YouTube thumbnail designer. A user has provided this reference image and wants to use it to create a thumbnail for a video titled "${options.title}". Your task is to act as a creative director and write a detailed visual prompt for an AI image generator. This prompt should describe how to transform or incorporate the user's image into a new, highly engaging, clickable YouTube thumbnail. Describe enhancements like dramatic lighting, color grading, special effects, and how to best integrate the title text. Provide ONLY the descriptive prompt for the image generator based on the provided image.` },
+                        imagePart
+                    ]
+                }
+            ],
         });
-        return response.text;
+        return response.text || '';
     }
     return 'A generic but exciting YouTube thumbnail.';
 };
@@ -56,11 +61,11 @@ export const enhancePrompt = async (currentPrompt: string): Promise<string> => {
         Return ONLY the rewritten, enhanced prompt. Do not add any extra text, explanations, or labels like "Enhanced Prompt:".`;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash-exp',
             contents: prompt,
         });
 
-        return response.text.trim();
+        return (response.text || '').trim();
     } catch (error) {
         console.error("Error enhancing prompt:", error);
         throw new Error("Failed to enhance the prompt with AI.");
@@ -80,7 +85,7 @@ export const generateThumbnail = async (options: GenerationOptions): Promise<str
         `;
 
         const response = await ai.models.generateImages({
-            model: 'imagen-4.0-generate-001',
+            model: 'imagen-3.0-generate-001',
             prompt: finalPrompt,
             config: {
                 numberOfImages: 1,
@@ -90,8 +95,12 @@ export const generateThumbnail = async (options: GenerationOptions): Promise<str
         });
         
         if (response.generatedImages && response.generatedImages.length > 0) {
-            const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-            return `data:image/jpeg;base64,${base64ImageBytes}`;
+            const imageBytes = response.generatedImages[0].image?.imageBytes;
+            if (imageBytes) {
+                return `data:image/jpeg;base64,${imageBytes}`;
+            } else {
+                throw new Error("Image generation failed, no image bytes returned.");
+            }
         } else {
             throw new Error("Image generation failed, no images were returned.");
         }
