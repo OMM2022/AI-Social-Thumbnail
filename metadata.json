@@ -1,0 +1,5 @@
+{
+  "name": "AI YouTube Thumbnail Generator",
+  "description": "An AI-powered application to generate compelling YouTube thumbnails. Users can provide a URL for content analysis, upload a reference image, and specify a title to be included in the generated image.",
+  "requestFramePermissions": []
+}
